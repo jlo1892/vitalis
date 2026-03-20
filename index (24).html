@@ -1,0 +1,832 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>VITALIS — Bienestar &amp; Productividad</title>
+<meta name="description" content="Tu sistema integral de bienestar y productividad sostenible">
+<meta name="theme-color" content="#0a0a0f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.json">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.26.5/babel.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/11.0.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/11.0.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore-compat.js"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      colors: {
+        surface: { 0:'#0a0a0f', 1:'#12121a', 2:'#1a1a25', 3:'#222230', 4:'#2a2a3a' },
+        accent: { blue:'#60a5fa', yellow:'#fbbf24', green:'#4ade80', red:'#f87171', purple:'#a78bfa', teal:'#2dd4bf', orange:'#fb923c', pink:'#f472b6' }
+      }
+    }
+  }
+}
+</script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&display=swap');
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'DM Sans',system-ui,sans-serif;background:#0a0a0f;color:#e4e4e7;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+::-webkit-scrollbar{width:4px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:#333;border-radius:99px}
+.glass{background:rgba(18,18,26,0.8);backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,0.06)}
+input[type=range]{-webkit-appearance:none;background:transparent;width:100%}
+input[type=range]::-webkit-slider-track{height:6px;background:#222230;border-radius:99px}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:22px;height:22px;border-radius:50%;background:#4ade80;margin-top:-8px;cursor:pointer}
+@keyframes fadeInUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+@keyframes pulse-soft{0%,100%{opacity:1}50%{opacity:0.7}}
+.anim-in{animation:fadeInUp .4s ease forwards}
+.pulse-soft{animation:pulse-soft 2s ease infinite}
+.safe-bottom{padding-bottom:max(env(safe-area-inset-bottom),16px)}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useCallback, useMemo, useRef } = React;
+
+// ============================================================
+// FIREBASE CONFIG — Replace with your values
+// ============================================================
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyC1CV6jNZQLgSh6BxNjHYNfZMbmxDszKqE",
+  authDomain: "vitalis-ff76a.firebaseapp.com",
+  projectId: "vitalis-ff76a",
+  storageBucket: "vitalis-ff76a.firebasestorage.app",
+  messagingSenderId: "626379461560",
+  appId: "1:626379461560:web:3dd9b3888e6c8a4902754d"
+};
+
+let fbApp = null, fbDb = null, fbAuth = null;
+try {
+  fbApp = firebase.initializeApp(FIREBASE_CONFIG);
+  fbDb = firebase.firestore();
+  fbAuth = firebase.auth();
+} catch(e) { console.warn('Firebase init failed:', e); }
+
+// ============================================================
+// CONSTANTS
+// ============================================================
+const MOOD_OPTIONS = [
+  { key:'great', emoji:'😊', label:'Genial', color:'#4ade80' },
+  { key:'good', emoji:'🙂', label:'Bien', color:'#86efac' },
+  { key:'neutral', emoji:'😐', label:'Neutral', color:'#fbbf24' },
+  { key:'tired', emoji:'😴', label:'Cansado', color:'#fb923c' },
+  { key:'stressed', emoji:'😰', label:'Estresado', color:'#f87171' },
+  { key:'sad', emoji:'😔', label:'Triste', color:'#a78bfa' },
+  { key:'anxious', emoji:'😟', label:'Ansioso', color:'#f472b6' },
+  { key:'motivated', emoji:'🔥', label:'Motivado', color:'#2dd4bf' },
+];
+
+const EXERCISE_TYPES = [
+  { key:'cardio_moderate', label:'Cardio moderado', icon:'🚶' },
+  { key:'cardio_vigorous', label:'Cardio vigoroso', icon:'🏃' },
+  { key:'strength', label:'Fuerza', icon:'💪' },
+  { key:'flexibility', label:'Flexibilidad', icon:'🧘' },
+  { key:'walk', label:'Caminata', icon:'🚶‍♂️' },
+  { key:'other', label:'Otro', icon:'⚡' },
+];
+
+const NUTRITION_CATS = [
+  { key:'protein', label:'Proteína', icon:'🥩' },
+  { key:'vegetables', label:'Vegetales', icon:'🥦' },
+  { key:'fruits', label:'Frutas', icon:'🍎' },
+  { key:'grains', label:'Granos integrales', icon:'🌾' },
+  { key:'dairy', label:'Lácteos', icon:'🥛' },
+  { key:'healthy_fats', label:'Grasas saludables', icon:'🥑' },
+];
+
+const BLOCK_CATS = {
+  deep_work: { label:'Deep Work', color:'#60a5fa', icon:'🔵' },
+  admin: { label:'Admin', color:'#fbbf24', icon:'🟡' },
+  followup: { label:'Follow-up', color:'#4ade80', icon:'🟢' },
+  meeting: { label:'Reunión', color:'#f87171', icon:'🔴' },
+  planning: { label:'Planeación', color:'#a78bfa', icon:'🟣' },
+  learning: { label:'Aprendizaje', color:'#2dd4bf', icon:'📚' },
+  buffer: { label:'Buffer', color:'#6b7280', icon:'⚪' },
+  rest: { label:'Descanso', color:'#92400e', icon:'☕' },
+};
+
+const SELF_CARE = ['Caminata al aire libre','Meditación','Tiempo con gente','Hobby creativo','Lectura','Sin pantallas','Naturaleza','Música','Journaling'];
+
+const MODULES = [
+  { id:'move', name:'Move', icon:'🏃', color:'#4ade80', desc:'Actividad física' },
+  { id:'nourish', name:'Nourish', icon:'🥗', color:'#fb923c', desc:'Nutrición' },
+  { id:'rest', name:'Rest', icon:'😴', color:'#818cf8', desc:'Sueño' },
+  { id:'mind', name:'Mind', icon:'🧠', color:'#f472b6', desc:'Bienestar mental' },
+  { id:'smile', name:'Smile', icon:'🦷', color:'#22d3ee', desc:'Salud oral' },
+  { id:'work', name:'Work', icon:'💼', color:'#60a5fa', desc:'Productividad' },
+  { id:'time', name:'Time', icon:'⏱️', color:'#a78bfa', desc:'Timeboxing' },
+];
+
+// ============================================================
+// UTILS
+// ============================================================
+const todayStr = () => new Date().toISOString().slice(0,10);
+const genId = () => Date.now().toString(36) + Math.random().toString(36).slice(2,6);
+const clamp = (v,a,b) => Math.max(a,Math.min(b,v));
+
+const last7 = () => {
+  const d = []; for(let i=6;i>=0;i--){ const dt=new Date(); dt.setDate(dt.getDate()-i); d.push(dt.toISOString().slice(0,10)); } return d;
+};
+
+const dayNames = ['dom','lun','mar','mié','jue','vie','sáb'];
+const shortDay = (s) => { try { return dayNames[new Date(s+'T12:00:00').getDay()]; } catch(e){ return s; }};
+
+const getGreeting = () => { const h=new Date().getHours(); return h<12?'Buenos días':h<18?'Buenas tardes':'Buenas noches'; };
+const checkinTime = () => { const h=new Date().getHours(); if(h>=5&&h<12) return 'morning'; if(h>=19||h<2) return 'night'; return null; };
+
+const getStatus = (s) => s>=70?'green':s>=40?'yellow':'red';
+const statusColor = (s) => s==='green'?'#4ade80':s==='yellow'?'#fbbf24':'#f87171';
+const statusBg = (s) => s==='green'?'rgba(74,222,128,0.12)':s==='yellow'?'rgba(251,191,36,0.12)':'rgba(248,113,113,0.12)';
+
+// ============================================================
+// SCORING
+// ============================================================
+function calcScores(days, profile) {
+  const sc = {};
+  // REST
+  const sleepDays = days.filter(d=>d.mc);
+  const avgSleep = sleepDays.length ? sleepDays.reduce((s,d)=>s+(d.mc.sleepHours||0),0)/sleepDays.length : 0;
+  const avgQual = sleepDays.length ? sleepDays.reduce((s,d)=>s+(d.mc.sleepQuality||0),0)/sleepDays.length : 0;
+  const sleepCons = clamp(sleepDays.length/7,0,1);
+  sc.rest = Math.round(clamp(avgSleep/profile.sleepGoal,0,1)*40 + (avgQual/5)*30 + sleepCons*30);
+
+  // MOVE
+  let totalMin=0, strDays=0, exDays=0;
+  days.forEach(d => {
+    const m = (d.moves||[]).reduce((s,e)=>s+e.minutes,0) + (d.nc?.exerciseMinutes||0);
+    if(m>0) exDays++;
+    totalMin += m;
+    if((d.moves||[]).some(e=>e.type==='strength') || d.nc?.exerciseType==='strength') strDays++;
+  });
+  sc.move = Math.round(clamp(totalMin/profile.weeklyExerciseGoal,0,1)*40 + clamp(strDays/profile.strengthDaysGoal,0,1)*25 + clamp(exDays/5,0,1)*35);
+
+  // NOURISH
+  const nutDays = days.filter(d=>d.nc);
+  const avgCats = nutDays.length ? nutDays.reduce((s,d)=>s+(d.nc.nutritionCats?.length||0),0)/nutDays.length : 0;
+  const avgWater = nutDays.length ? nutDays.reduce((s,d)=>s+(d.nc.waterGlasses||0),0)/nutDays.length : 0;
+  sc.nourish = Math.round(clamp(avgCats/4,0,1)*50 + clamp(avgWater/profile.waterGoal,0,1)*30 + clamp(nutDays.length/7,0,1)*20);
+
+  // MIND
+  const mindDays = days.filter(d=>d.mc||d.nc);
+  let stressS=0,moodS=0,selfC=0,socS=0,mc2=0;
+  mindDays.forEach(d => {
+    mc2++;
+    if(d.mc){ stressS+=clamp(1-(d.mc.stressLevel-1)/4,0,1); moodS+=clamp(d.mc.energyLevel/5,0,1); }
+    else { stressS+=0.5; moodS+=0.5; }
+    if(d.nc){ selfC+=(d.nc.selfCare?.length||0)>0?1:0; socS+=d.nc.socialInteraction?1:0; }
+  });
+  sc.mind = mc2 ? Math.round((moodS/mc2)*25+(stressS/mc2)*25+(selfC/mc2)*25+(socS/mc2)*25) : 0;
+
+  // SMILE
+  let smC=0,smT=0;
+  days.forEach(d => {
+    if(d.mc||d.nc){ smT++; let v=0; if(d.mc?.brushedMorning) v+=0.4; if(d.nc?.brushedNight) v+=0.3; if(d.nc?.flossed) v+=0.3; smC+=v; }
+  });
+  sc.smile = smT ? Math.round((smC/smT)*100) : 0;
+
+  // WORK
+  const wDays = days.filter(d=>d.nc);
+  const avgProd = wDays.length ? wDays.reduce((s,d)=>s+(d.nc.productivityRating||0),0)/wDays.length : 0;
+  let compRate = 0, compCount = 0;
+  days.forEach(d => {
+    const wb = (d.blocks||[]).filter(b=>b.category!=='buffer'&&b.category!=='rest');
+    if(wb.length){ compCount++; compRate += wb.filter(b=>b.status==='completed').length/wb.length; }
+  });
+  sc.work = Math.round((avgProd/5)*50 + (compCount?compRate/compCount:0)*50);
+
+  // TIME
+  let tComp=0,tDays=0;
+  days.forEach(d => {
+    const wb = (d.blocks||[]).filter(b=>b.category!=='buffer'&&b.category!=='rest');
+    if(wb.length){ tDays++; tComp += wb.filter(b=>b.status==='completed'||b.status==='partial').length/wb.length; }
+  });
+  sc.time = tDays ? Math.round((tComp/tDays)*100) : 0;
+
+  // Clamp all
+  Object.keys(sc).forEach(k => sc[k] = clamp(sc[k],0,100));
+
+  // Global
+  const w = { rest:0.20, move:0.18, nourish:0.17, mind:0.18, work:0.12, smile:0.08, time:0.07 };
+  sc.global = Math.round(Object.entries(w).reduce((s,[k,v])=>s+(sc[k]||0)*v, 0));
+
+  return sc;
+}
+
+// ============================================================
+// DATA STORE (localStorage + Firebase)
+// ============================================================
+const STORAGE_KEY = 'vitalis_data';
+
+function loadLocal() {
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}; } catch(e){ return {}; }
+}
+function saveLocal(data) {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch(e){} 
+}
+
+let cloudSaveTimer = null;
+function saveCloud(data, uid) {
+  if(!fbDb || !uid) return;
+  if(cloudSaveTimer) clearTimeout(cloudSaveTimer);
+  cloudSaveTimer = setTimeout(() => {
+    fbDb.collection('users').doc(uid).set({ ...data, updatedAt: Date.now() }, { merge:true }).catch(e=>console.warn('Cloud save err:',e));
+  }, 1500);
+}
+
+// ============================================================
+// APP
+// ============================================================
+function App() {
+  const [data, setDataRaw] = useState(loadLocal);
+  const [uid, setUid] = useState(null);
+  const [ready, setReady] = useState(false);
+  const [tab, setTab] = useState('home');
+  const [checkinMode, setCM] = useState(null);
+  const [activeModule, setAM] = useState(null);
+
+  const setData = useCallback((fn) => {
+    setDataRaw(prev => {
+      const next = typeof fn === 'function' ? fn(prev) : fn;
+      saveLocal(next);
+      if(uid) saveCloud(next, uid);
+      return next;
+    });
+  }, [uid]);
+
+  const profile = data.profile || {};
+  const dailyData = data.days || {};
+
+  const setProfile = (p) => setData(d => ({...d, profile:{...d.profile,...p}}));
+
+  const getDay = (date) => dailyData[date] || { date, mc:null, nc:null, moves:[], blocks:[] };
+  const setDay = (date, fn) => setData(d => ({ ...d, days: { ...d.days, [date]: fn(d.days?.[date] || { date, mc:null, nc:null, moves:[], blocks:[] }) } }));
+
+  const todayData = getDay(todayStr());
+  const weekData = useMemo(() => last7().map(d => getDay(d)), [dailyData]);
+  const scores = useMemo(() => calcScores(weekData, { sleepGoal: profile.sleepGoal||7, weeklyExerciseGoal: profile.weeklyExerciseGoal||150, strengthDaysGoal: profile.strengthDaysGoal||2, waterGoal: profile.waterGoal||8 }), [weekData, profile]);
+
+  // Firebase auth + sync
+  useEffect(() => {
+    if(!fbAuth){ setReady(true); return; }
+    fbAuth.signInAnonymously().then(cred => {
+      const u = cred.user.uid;
+      setUid(u);
+      // Load from cloud
+      fbDb.collection('users').doc(u).get().then(snap => {
+        if(snap.exists()) {
+          const cloud = snap.data();
+          setDataRaw(prev => {
+            const merged = { ...prev };
+            if(cloud.profile?.onboardingComplete && !prev.profile?.onboardingComplete) merged.profile = { ...prev.profile, ...cloud.profile };
+            if(cloud.days) {
+              merged.days = { ...prev.days };
+              Object.entries(cloud.days).forEach(([date, dd]) => {
+                if(!merged.days[date]) merged.days[date] = dd;
+                else {
+                  if(dd.mc && !merged.days[date].mc) merged.days[date] = {...merged.days[date], mc:dd.mc};
+                  if(dd.nc && !merged.days[date].nc) merged.days[date] = {...merged.days[date], nc:dd.nc};
+                  if((dd.blocks?.length||0) > (merged.days[date].blocks?.length||0)) merged.days[date] = {...merged.days[date], blocks:dd.blocks};
+                }
+              });
+            }
+            saveLocal(merged);
+            return merged;
+          });
+        }
+        setReady(true);
+      }).catch(() => setReady(true));
+      // Real-time listener
+      fbDb.collection('users').doc(u).onSnapshot(snap => {
+        if(snap.exists()) {
+          const cloud = snap.data();
+          setDataRaw(prev => {
+            const merged = { ...prev, days: { ...prev.days } };
+            if(cloud.days) Object.entries(cloud.days).forEach(([date, dd]) => {
+              if(!merged.days[date]) merged.days[date] = dd;
+            });
+            if(cloud.profile) merged.profile = { ...merged.profile, ...cloud.profile };
+            return merged;
+          });
+        }
+      });
+    }).catch(() => setReady(true));
+  }, []);
+
+  if(!ready) return React.createElement('div', {className:'min-h-screen flex items-center justify-center'}, React.createElement('div', {className:'text-center'}, React.createElement('div', {className:'text-5xl mb-3 pulse-soft'}, '🌿'), React.createElement('div', {className:'text-zinc-500 text-sm'}, 'Cargando VITALIS...')));
+
+  if(!profile.onboardingComplete) return React.createElement(Onboarding, { setProfile });
+
+  const openCheckin = (m) => { setCM(m); setTab('checkin'); };
+  const closeCheckin = () => { setCM(null); setTab('home'); };
+
+  const views = {
+    home: React.createElement(Dashboard, { profile, todayData, scores, openCheckin, setTab, setAM }),
+    checkin: React.createElement(CheckinView, { mode: checkinMode, setCM, closeCheckin, todayData, setDay, profile }),
+    time: React.createElement(TimeboxingView, { todayData, setDay }),
+    modules: React.createElement(ModuleView, { activeModule, setAM, scores, weekData, profile }),
+    review: React.createElement(WeeklyReview, { scores, weekData, profile }),
+  };
+
+  return React.createElement('div', {className:'min-h-screen flex flex-col'},
+    React.createElement('main', {className:'flex-1 pb-20 overflow-y-auto'}, views[tab] || views.home),
+    React.createElement('nav', {className:'fixed bottom-0 left-0 right-0 glass border-t border-white/5 safe-bottom z-50'},
+      React.createElement('div', {className:'max-w-lg mx-auto flex items-center justify-around py-2'},
+        [{k:'home',l:'Inicio',i:'🏠'},{k:'time',l:'Tiempo',i:'⏱️'},{k:'checkin',l:'Check-in',i:'✍️'},{k:'modules',l:'Módulos',i:'📊'},{k:'review',l:'Semana',i:'📈'}].map(n =>
+          React.createElement('button', {key:n.k, onClick:()=>{setTab(n.k);setAM(null);setCM(null);}, className:`flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-lg transition-all ${tab===n.k?'text-emerald-400':'text-zinc-500 hover:text-zinc-300'}`},
+            React.createElement('span', {className:'text-xl'}, n.i),
+            React.createElement('span', {className:'text-[10px] font-medium'}, n.l)
+          )
+        )
+      )
+    )
+  );
+}
+
+// ============================================================
+// ONBOARDING
+// ============================================================
+function Onboarding({ setProfile }) {
+  const [step, setStep] = useState(0);
+  const [name, setName] = useState('');
+  const [wake, setWake] = useState('07:00');
+  const [bed, setBed] = useState('23:00');
+  const [exLvl, setExLvl] = useState('');
+
+  const finish = () => {
+    const goals = { none:90, some:150, regular:200, active:300 };
+    setProfile({ name, wakeTime:wake, bedTime:bed, weeklyExerciseGoal:goals[exLvl]||150, strengthDaysGoal:2, waterGoal:8, sleepGoal:7, maxWorkHours:9, onboardingComplete:true });
+  };
+
+  const Btn = ({onClick,disabled,children,cls}) => React.createElement('button', {onClick, disabled, className:`px-8 py-3 ${cls||'bg-emerald-500 hover:bg-emerald-400'} disabled:opacity-30 text-black font-semibold rounded-xl transition-all`}, children);
+
+  const steps = [
+    React.createElement('div', {key:0, className:'flex flex-col items-center gap-8 anim-in'},
+      React.createElement('div', {className:'text-6xl'}, '🌿'),
+      React.createElement('h1', {className:'text-4xl font-bold tracking-tight text-center'}, React.createElement('span', {className:'text-emerald-400'}, 'VITALIS')),
+      React.createElement('p', {className:'text-zinc-400 text-center text-lg max-w-sm leading-relaxed'}, 'Tu sistema integral de bienestar y productividad sostenible.'),
+      React.createElement('p', {className:'text-zinc-500 text-sm text-center max-w-xs'}, 'Basado en guías de la OMS, CDC, AASM y Dietary Guidelines for Americans.'),
+      React.createElement(Btn, {onClick:()=>setStep(1)}, 'Comenzar')
+    ),
+    React.createElement('div', {key:1, className:'flex flex-col gap-6 w-full max-w-sm anim-in'},
+      React.createElement('h2', {className:'text-2xl font-bold'}, '¿Cómo te llamas?'),
+      React.createElement('input', {type:'text', value:name, onChange:e=>setName(e.target.value), placeholder:'Tu nombre', className:'w-full px-4 py-3 bg-surface-2 border border-white/10 rounded-xl text-lg focus:outline-none focus:border-emerald-500/50', autoFocus:true}),
+      React.createElement(Btn, {onClick:()=>name.trim()&&setStep(2), disabled:!name.trim()}, 'Siguiente')
+    ),
+    React.createElement('div', {key:2, className:'flex flex-col gap-6 w-full max-w-sm anim-in'},
+      React.createElement('h2', {className:'text-2xl font-bold'}, 'Tu horario de sueño'),
+      React.createElement('p', {className:'text-zinc-400 text-sm'}, 'La AASM recomienda 7+ horas de sueño para adultos.'),
+      React.createElement('label', {className:'block'}, React.createElement('span', {className:'text-sm text-zinc-400 mb-1 block'}, '¿A qué hora despiertas?'), React.createElement('input', {type:'time', value:wake, onChange:e=>setWake(e.target.value), className:'w-full px-4 py-3 bg-surface-2 border border-white/10 rounded-xl text-lg focus:outline-none focus:border-emerald-500/50'})),
+      React.createElement('label', {className:'block'}, React.createElement('span', {className:'text-sm text-zinc-400 mb-1 block'}, '¿A qué hora quieres dormir?'), React.createElement('input', {type:'time', value:bed, onChange:e=>setBed(e.target.value), className:'w-full px-4 py-3 bg-surface-2 border border-white/10 rounded-xl text-lg focus:outline-none focus:border-emerald-500/50'})),
+      React.createElement(Btn, {onClick:()=>setStep(3)}, 'Siguiente')
+    ),
+    React.createElement('div', {key:3, className:'flex flex-col gap-6 w-full max-w-sm anim-in'},
+      React.createElement('h2', {className:'text-2xl font-bold'}, '¿Cuánto ejercicio haces?'),
+      React.createElement('p', {className:'text-zinc-400 text-sm'}, 'La OMS recomienda 150-300 min/semana de actividad moderada.'),
+      React.createElement('div', {className:'space-y-3'},
+        [{k:'none',l:'Casi nada',d:'Empezaremos suave'},{k:'some',l:'Algo',d:'1-2 veces por semana'},{k:'regular',l:'Regular',d:'3-4 veces por semana'},{k:'active',l:'Mucho',d:'5+ veces por semana'}].map(o =>
+          React.createElement('button', {key:o.k, onClick:()=>setExLvl(o.k), className:`w-full text-left px-4 py-3 rounded-xl border transition-all ${exLvl===o.k?'border-emerald-500/50 bg-emerald-500/10':'border-white/10 bg-surface-2 hover:border-white/20'}`},
+            React.createElement('div', {className:'font-medium'}, o.l), React.createElement('div', {className:'text-sm text-zinc-500'}, o.d))
+        )
+      ),
+      React.createElement(Btn, {onClick:finish, disabled:!exLvl}, '¡Comenzar! 🚀')
+    ),
+  ];
+
+  return React.createElement('div', {className:'min-h-screen flex flex-col items-center justify-center p-6'},
+    React.createElement('div', {className:'flex gap-2 mb-12'}, [0,1,2,3].map(i => React.createElement('div', {key:i, className:`h-1 w-8 rounded-full transition-all ${i<=step?'bg-emerald-400':'bg-white/10'}`}))),
+    steps[step]
+  );
+}
+
+// ============================================================
+// SCORE RING
+// ============================================================
+function ScoreRing({ score, size=100 }) {
+  const r = (size-10)/2, circ = 2*Math.PI*r, offset = circ-(score/100)*circ;
+  const color = score>=70?'#4ade80':score>=40?'#fbbf24':'#f87171';
+  return React.createElement('div', {className:'relative', style:{width:size,height:size}},
+    React.createElement('svg', {width:size, height:size, className:'-rotate-90'},
+      React.createElement('circle', {cx:size/2,cy:size/2,r,fill:'none',stroke:'rgba(255,255,255,0.05)',strokeWidth:6}),
+      React.createElement('circle', {cx:size/2,cy:size/2,r,fill:'none',stroke:color,strokeWidth:6,strokeDasharray:circ,strokeDashoffset:offset,strokeLinecap:'round',style:{transition:'stroke-dashoffset 1s'}})
+    ),
+    React.createElement('div', {className:'absolute inset-0 flex flex-col items-center justify-center'},
+      React.createElement('span', {className:'text-2xl font-bold', style:{color}}, score),
+      React.createElement('span', {className:'text-[10px] text-zinc-500'}, '/ 100')
+    )
+  );
+}
+
+// ============================================================
+// RATING BUTTONS
+// ============================================================
+function RatingRow({ value, onChange, color='bg-emerald-500', labels }) {
+  return React.createElement('div', null,
+    React.createElement('div', {className:'flex gap-2 justify-center'},
+      [1,2,3,4,5].map(n => React.createElement('button', {key:n, onClick:()=>onChange(n), className:`w-12 h-12 rounded-xl text-lg font-bold transition-all ${value===n?color+' text-black':'bg-surface-3 text-zinc-400'}`}, n))
+    ),
+    labels && React.createElement('div', {className:'flex justify-between text-xs text-zinc-600 mt-1'}, React.createElement('span',null,labels[0]), React.createElement('span',null,labels[1]))
+  );
+}
+
+// ============================================================
+// DASHBOARD
+// ============================================================
+function Dashboard({ profile, todayData, scores, openCheckin, setTab, setAM }) {
+  const ct = checkinTime();
+  const hasMC = !!todayData.mc, hasNC = !!todayData.nc;
+  const nextBlock = (todayData.blocks||[]).filter(b=>b.status==='pending').sort((a,b)=>a.startTime.localeCompare(b.startTime))[0];
+
+  const Stat = ({icon,label,value}) => React.createElement('div', {className:'flex items-center gap-2.5 bg-white/[0.03] rounded-xl p-3'},
+    React.createElement('span',{className:'text-xl'},icon),
+    React.createElement('div',null, React.createElement('div',{className:'text-xs text-zinc-500'},label), React.createElement('div',{className:'font-semibold text-sm'},value))
+  );
+
+  const exerciseMin = (todayData.moves||[]).reduce((s,e)=>s+e.minutes,0) + (todayData.nc?.exerciseMinutes||0);
+
+  return React.createElement('div', {className:'max-w-lg mx-auto px-4 pt-6 space-y-5'},
+    // Header
+    React.createElement('div', {className:'flex items-start justify-between'},
+      React.createElement('div', null,
+        React.createElement('p', {className:'text-zinc-500 text-sm'}, new Date().toLocaleDateString('es-MX',{weekday:'long',day:'numeric',month:'long'})),
+        React.createElement('h1', {className:'text-2xl font-bold mt-1'}, getGreeting()+', ', React.createElement('span',{className:'text-emerald-400'},profile.name))
+      ),
+      React.createElement(ScoreRing, {score:scores.global, size:72})
+    ),
+    // Check-in CTA
+    ct==='morning'&&!hasMC && React.createElement('button', {onClick:()=>openCheckin('morning'), className:'w-full glass rounded-2xl p-4 flex items-center gap-4 border border-emerald-500/20 hover:border-emerald-500/40 transition-all'},
+      React.createElement('span',{className:'text-3xl'},'☀️'),
+      React.createElement('div',{className:'text-left flex-1'}, React.createElement('div',{className:'font-semibold'},'Check-in matutino'), React.createElement('div',{className:'text-sm text-zinc-400'},'Sueño, ánimo y plan del día')),
+      React.createElement('span',{className:'text-emerald-400 text-xl'},'→')
+    ),
+    ct==='night'&&!hasNC && React.createElement('button', {onClick:()=>openCheckin('night'), className:'w-full glass rounded-2xl p-4 flex items-center gap-4 border border-indigo-500/20 hover:border-indigo-500/40 transition-all'},
+      React.createElement('span',{className:'text-3xl'},'🌙'),
+      React.createElement('div',{className:'text-left flex-1'}, React.createElement('div',{className:'font-semibold'},'Cierre del día'), React.createElement('div',{className:'text-sm text-zinc-400'},'Nutrición, ejercicio y productividad')),
+      React.createElement('span',{className:'text-indigo-400 text-xl'},'→')
+    ),
+    hasMC&&hasNC && React.createElement('div', {className:'glass rounded-2xl p-4 flex items-center gap-3 border border-emerald-500/10'}, React.createElement('span',{className:'text-2xl'},'✅'), React.createElement('div',{className:'text-sm text-zinc-400'},'Check-ins del día completos. ¡Bien hecho!')),
+    // Next block
+    nextBlock && React.createElement('button', {onClick:()=>setTab('time'), className:'w-full glass rounded-2xl p-4 flex items-center gap-4 border border-white/5 hover:border-white/10 transition-all'},
+      React.createElement('div', {className:'w-10 h-10 rounded-xl flex items-center justify-center text-lg', style:{background:BLOCK_CATS[nextBlock.category]?.color+'22'}}, BLOCK_CATS[nextBlock.category]?.icon),
+      React.createElement('div', {className:'text-left flex-1'}, React.createElement('div',{className:'text-xs text-zinc-500'},'Próximo bloque'), React.createElement('div',{className:'font-medium text-sm'},nextBlock.title)),
+      React.createElement('div', {className:'text-right'}, React.createElement('div',{className:'text-sm font-mono text-zinc-400'},nextBlock.startTime), React.createElement('div',{className:'text-[10px] text-zinc-500'},nextBlock.durationMinutes+' min'))
+    ),
+    // Spheres
+    React.createElement('div', null,
+      React.createElement('h2', {className:'text-sm font-semibold text-zinc-500 uppercase tracking-wider mb-3'}, 'Esferas'),
+      React.createElement('div', {className:'grid grid-cols-4 gap-2'},
+        MODULES.map(m => {
+          const s = scores[m.id]||0, st = getStatus(s);
+          return React.createElement('button', {key:m.id, onClick:()=>{setAM(m.id);setTab('modules');}, className:'rounded-2xl p-3 flex flex-col items-center gap-1.5 transition-all hover:scale-105 active:scale-95', style:{background:statusBg(st)}},
+            React.createElement('span',{className:'text-2xl'},m.icon), React.createElement('span',{className:'text-xs font-medium text-zinc-300'},m.name), React.createElement('span',{className:'text-sm font-bold',style:{color:statusColor(st)}},s)
+          );
+        }),
+        React.createElement('div', {key:'g', className:'rounded-2xl p-3 flex flex-col items-center justify-center gap-1 bg-white/[0.02] border border-dashed border-white/10'},
+          React.createElement('span',{className:'text-lg text-zinc-600'},'💡'), React.createElement('span',{className:'text-[10px] text-zinc-600'},'Global'), React.createElement('span',{className:'text-sm font-bold text-zinc-600'},scores.global)
+        )
+      )
+    ),
+    // Today summary
+    React.createElement('div', {className:'glass rounded-2xl p-4 space-y-3'},
+      React.createElement('h2', {className:'text-sm font-semibold text-zinc-500 uppercase tracking-wider'}, 'Hoy'),
+      React.createElement('div', {className:'grid grid-cols-2 gap-3'},
+        React.createElement(Stat, {icon:'😴',label:'Sueño',value:todayData.mc?todayData.mc.sleepHours+'h':'—'}),
+        React.createElement(Stat, {icon:'🏃',label:'Ejercicio',value:exerciseMin>0?exerciseMin+' min':'—'}),
+        React.createElement(Stat, {icon:'💧',label:'Agua',value:todayData.nc?todayData.nc.waterGlasses+' vasos':'—'}),
+        React.createElement(Stat, {icon:'⏱️',label:'Bloques',value:(todayData.blocks||[]).length>0?(todayData.blocks||[]).filter(b=>b.status==='completed').length+'/'+(todayData.blocks||[]).filter(b=>b.category!=='buffer'&&b.category!=='rest').length:'—'})
+      )
+    ),
+    // Quick actions
+    React.createElement('div', {className:'flex gap-2 pb-4'},
+      !hasMC && React.createElement('button', {onClick:()=>openCheckin('morning'), className:'flex-1 text-sm py-2.5 rounded-xl bg-surface-2 border border-white/5 hover:border-white/10'}, '☀️ Mañana'),
+      !hasNC && React.createElement('button', {onClick:()=>openCheckin('night'), className:'flex-1 text-sm py-2.5 rounded-xl bg-surface-2 border border-white/5 hover:border-white/10'}, '🌙 Noche'),
+      React.createElement('button', {onClick:()=>setTab('time'), className:'flex-1 text-sm py-2.5 rounded-xl bg-surface-2 border border-white/5 hover:border-white/10'}, '⏱️ Bloques')
+    )
+  );
+}
+
+// ============================================================
+// CHECK-IN VIEW
+// ============================================================
+function CheckinView({ mode, setCM, closeCheckin, todayData, setDay, profile }) {
+  if(!mode) return React.createElement('div', {className:'max-w-lg mx-auto px-4 pt-6 space-y-4'},
+    React.createElement('h1',{className:'text-2xl font-bold'},'Check-in'),
+    React.createElement('button', {onClick:()=>setCM('morning'), className:'w-full glass rounded-2xl p-5 text-left border border-white/5 hover:border-emerald-500/30 transition-all'},
+      React.createElement('div',{className:'flex items-center gap-4'}, React.createElement('span',{className:'text-3xl'},'☀️'), React.createElement('div',null, React.createElement('div',{className:'font-semibold text-lg'},'Check-in matutino'), React.createElement('div',{className:'text-sm text-zinc-400'},'Sueño, ánimo, plan del día')))
+    ),
+    React.createElement('button', {onClick:()=>setCM('night'), className:'w-full glass rounded-2xl p-5 text-left border border-white/5 hover:border-indigo-500/30 transition-all'},
+      React.createElement('div',{className:'flex items-center gap-4'}, React.createElement('span',{className:'text-3xl'},'🌙'), React.createElement('div',null, React.createElement('div',{className:'font-semibold text-lg'},'Cierre del día'), React.createElement('div',{className:'text-sm text-zinc-400'},'Nutrición, ejercicio, productividad')))
+    )
+  );
+  if(mode==='morning') return React.createElement(MorningFlow, { closeCheckin, setDay });
+  return React.createElement(NightFlow, { closeCheckin, setDay });
+}
+
+function MorningFlow({ closeCheckin, setDay }) {
+  const [step,setStep]=useState(0), [sleepH,setSH]=useState(7), [sleepQ,setSQ]=useState(3), [mood,setMood]=useState(''), [stress,setStress]=useState(2), [energy,setEnergy]=useState(3), [brushed,setBrushed]=useState(false), [p1,setP1]=useState(''), [p2,setP2]=useState(''), [p3,setP3]=useState('');
+
+  const save = () => { setDay(todayStr(), d=>({...d, mc:{sleepHours:sleepH,sleepQuality:sleepQ,mood,stressLevel:stress,energyLevel:energy,brushedMorning:brushed,priorities:[p1,p2,p3].filter(Boolean),ts:Date.now()}})); closeCheckin(); };
+
+  const Back = () => React.createElement('button', {onClick:closeCheckin, className:'text-zinc-500 hover:text-zinc-300 text-sm'}, '← Volver');
+  const Progress = () => React.createElement('div', {className:'flex gap-1.5 mb-6'}, [0,1,2].map(i=>React.createElement('div',{key:i,className:`h-1 w-8 rounded-full ${i<=step?'bg-emerald-400':'bg-white/10'}`})));
+
+  const steps = [
+    // Sleep
+    React.createElement('div',{key:'s',className:'space-y-6 anim-in'},
+      React.createElement('div',{className:'text-center'}, React.createElement('span',{className:'text-4xl'},'😴'), React.createElement('h2',{className:'text-xl font-bold mt-3'},'¿Cómo dormiste?')),
+      React.createElement('div',null, React.createElement('label',{className:'text-sm text-zinc-400 block mb-2'},'Horas: ',React.createElement('span',{className:'text-emerald-400 font-bold text-lg'},sleepH+'h')), React.createElement('input',{type:'range',min:3,max:12,step:0.5,value:sleepH,onChange:e=>setSH(+e.target.value)})),
+      React.createElement('div',null, React.createElement('label',{className:'text-sm text-zinc-400 block mb-3'},'Calidad'), React.createElement(RatingRow,{value:sleepQ,onChange:setSQ,color:'bg-emerald-500',labels:['Pésimo','Excelente']}))
+    ),
+    // Mood
+    React.createElement('div',{key:'m',className:'space-y-6 anim-in'},
+      React.createElement('div',{className:'text-center'}, React.createElement('span',{className:'text-4xl'},'🧠'), React.createElement('h2',{className:'text-xl font-bold mt-3'},'¿Cómo te sientes?')),
+      React.createElement('div',{className:'grid grid-cols-4 gap-2'}, MOOD_OPTIONS.map(m=>React.createElement('button',{key:m.key,onClick:()=>setMood(m.key),className:`flex flex-col items-center gap-1 p-3 rounded-xl transition-all ${mood===m.key?'ring-2 ring-emerald-500 bg-white/10':'bg-surface-3'}`}, React.createElement('span',{className:'text-2xl'},m.emoji), React.createElement('span',{className:'text-[10px] text-zinc-400'},m.label)))),
+      React.createElement('div',null, React.createElement('label',{className:'text-sm text-zinc-400 block mb-3'},'Estrés'), React.createElement(RatingRow,{value:stress,onChange:setStress,color:'bg-orange-500',labels:['Bajo','Alto']})),
+      React.createElement('div',null, React.createElement('label',{className:'text-sm text-zinc-400 block mb-3'},'Energía'), React.createElement(RatingRow,{value:energy,onChange:setEnergy,color:'bg-cyan-500',labels:['Sin energía','Al 100%']}))
+    ),
+    // Plan
+    React.createElement('div',{key:'p',className:'space-y-6 anim-in'},
+      React.createElement('div',{className:'text-center'}, React.createElement('span',{className:'text-4xl'},'📋'), React.createElement('h2',{className:'text-xl font-bold mt-3'},'Prepara tu día')),
+      React.createElement('button',{onClick:()=>setBrushed(!brushed),className:`w-full flex items-center gap-3 p-4 rounded-xl transition-all ${brushed?'bg-cyan-500/10 border border-cyan-500/30':'bg-surface-3 border border-white/5'}`}, React.createElement('span',{className:'text-2xl'},'🦷'), React.createElement('span',{className:'flex-1 text-left'},'¿Te cepillaste?'), React.createElement('span',{className:'text-2xl'},brushed?'✅':'⬜')),
+      React.createElement('div',null, React.createElement('label',{className:'text-sm text-zinc-400 block mb-2'},'Top prioridades (máx 3)'),
+        React.createElement('input',{type:'text',value:p1,onChange:e=>setP1(e.target.value),placeholder:'Prioridad 1',className:'w-full px-4 py-2.5 bg-surface-2 border border-white/5 rounded-xl text-sm mb-2 focus:outline-none focus:border-emerald-500/30'}),
+        React.createElement('input',{type:'text',value:p2,onChange:e=>setP2(e.target.value),placeholder:'Prioridad 2',className:'w-full px-4 py-2.5 bg-surface-2 border border-white/5 rounded-xl text-sm mb-2 focus:outline-none focus:border-emerald-500/30'}),
+        React.createElement('input',{type:'text',value:p3,onChange:e=>setP3(e.target.value),placeholder:'Prioridad 3',className:'w-full px-4 py-2.5 bg-surface-2 border border-white/5 rounded-xl text-sm focus:outline-none focus:border-emerald-500/30'})
+      )
+    ),
+  ];
+
+  return React.createElement('div',{className:'max-w-lg mx-auto px-4 pt-6'},
+    React.createElement('div',{className:'flex items-center justify-between mb-4'}, React.createElement(Back), React.createElement(Progress), React.createElement('span',{className:'text-xs text-zinc-500'},(step+1)+'/3')),
+    steps[step],
+    React.createElement('div',{className:'flex gap-3 mt-8 pb-6'},
+      step>0 && React.createElement('button',{onClick:()=>setStep(step-1),className:'px-6 py-3 bg-surface-3 rounded-xl text-sm'},'Atrás'),
+      step<2 ? React.createElement('button',{onClick:()=>setStep(step+1),className:'flex-1 px-6 py-3 bg-emerald-500 hover:bg-emerald-400 text-black font-semibold rounded-xl'},'Siguiente')
+        : React.createElement('button',{onClick:save,className:'flex-1 px-6 py-3 bg-emerald-500 hover:bg-emerald-400 text-black font-semibold rounded-xl'},'Guardar ✓')
+    )
+  );
+}
+
+function NightFlow({ closeCheckin, setDay }) {
+  const [step,setStep]=useState(0), [water,setWater]=useState(4), [cats,setCats]=useState([]), [exType,setExType]=useState(''), [exMin,setExMin]=useState(0), [prod,setProd]=useState(3), [fatigue,setFatigue]=useState(2), [moodN,setMoodN]=useState(''), [brushN,setBrushN]=useState(false), [floss,setFloss]=useState(false), [grat,setGrat]=useState(''), [selfCare,setSC]=useState([]), [social,setSocial]=useState(false);
+
+  const toggleCat = c => setCats(p=>p.includes(c)?p.filter(x=>x!==c):[...p,c]);
+  const toggleSC = s => setSC(p=>p.includes(s)?p.filter(x=>x!==s):[...p,s]);
+
+  const save = () => { setDay(todayStr(), d=>({...d, nc:{waterGlasses:water,nutritionCats:cats,exerciseType:exType,exerciseMinutes:exMin,productivityRating:prod,fatigueLevel:fatigue,moodNight:moodN,brushedNight:brushN,flossed:floss,gratitude:grat,selfCare,socialInteraction:social,ts:Date.now()}})); closeCheckin(); };
+
+  const steps = [
+    // Nutrition
+    React.createElement('div',{key:'n',className:'space-y-6 anim-in'},
+      React.createElement('div',{className:'text-center'}, React.createElement('span',{className:'text-4xl'},'🥗'), React.createElement('h2',{className:'text-xl font-bold mt-3'},'¿Cómo comiste hoy?')),
+      React.createElement('div',{className:'grid grid-cols-2 gap-2'}, NUTRITION_CATS.map(c=>React.createElement('button',{key:c.key,onClick:()=>toggleCat(c.key),className:`flex items-center gap-2.5 p-3 rounded-xl text-left transition-all ${cats.includes(c.key)?'bg-orange-500/15 border border-orange-500/30':'bg-surface-3 border border-white/5'}`}, React.createElement('span',{className:'text-xl'},c.icon), React.createElement('span',{className:'text-sm'},c.label), cats.includes(c.key)&&React.createElement('span',{className:'ml-auto'},'✓')))),
+      React.createElement('div',null, React.createElement('label',{className:'text-sm text-zinc-400 block mb-2'},'Agua: ',React.createElement('span',{className:'text-cyan-400 font-bold'},water)), React.createElement('input',{type:'range',min:0,max:15,value:water,onChange:e=>setWater(+e.target.value)}))
+    ),
+    // Exercise
+    React.createElement('div',{key:'e',className:'space-y-6 anim-in'},
+      React.createElement('div',{className:'text-center'}, React.createElement('span',{className:'text-4xl'},'🏃'), React.createElement('h2',{className:'text-xl font-bold mt-3'},'¿Hiciste ejercicio?')),
+      React.createElement('div',{className:'grid grid-cols-2 gap-2'}, EXERCISE_TYPES.map(t=>React.createElement('button',{key:t.key,onClick:()=>setExType(t.key),className:`flex flex-col items-center gap-1 p-3 rounded-xl transition-all ${exType===t.key?'bg-green-500/15 border border-green-500/30':'bg-surface-3 border border-white/5'}`}, React.createElement('span',{className:'text-xl'},t.icon), React.createElement('span',{className:'text-xs font-medium'},t.label)))),
+      exType && React.createElement('div',null, React.createElement('label',{className:'text-sm text-zinc-400 block mb-2'},'Duración: ',React.createElement('span',{className:'text-green-400 font-bold'},exMin+' min')), React.createElement('input',{type:'range',min:0,max:180,step:5,value:exMin,onChange:e=>setExMin(+e.target.value)})),
+      !exType && React.createElement('button',{onClick:()=>setStep(step+1),className:'w-full py-3 bg-surface-3 rounded-xl text-sm text-zinc-400'},'Sin ejercicio → Saltar')
+    ),
+    // Work
+    React.createElement('div',{key:'w',className:'space-y-6 anim-in'},
+      React.createElement('div',{className:'text-center'}, React.createElement('span',{className:'text-4xl'},'💼'), React.createElement('h2',{className:'text-xl font-bold mt-3'},'¿Cómo fue tu día?')),
+      React.createElement('div',null, React.createElement('label',{className:'text-sm text-zinc-400 block mb-3'},'Productividad'), React.createElement(RatingRow,{value:prod,onChange:setProd,color:'bg-blue-500',labels:['Nada','Muy productivo']})),
+      React.createElement('div',null, React.createElement('label',{className:'text-sm text-zinc-400 block mb-3'},'Fatiga'), React.createElement(RatingRow,{value:fatigue,onChange:setFatigue,color:'bg-red-500',labels:['Descansado','Agotado']})),
+      React.createElement('div',null, React.createElement('label',{className:'text-sm text-zinc-400 block mb-3'},'¿Cómo te sientes?'), React.createElement('div',{className:'grid grid-cols-4 gap-2'},MOOD_OPTIONS.map(m=>React.createElement('button',{key:m.key,onClick:()=>setMoodN(m.key),className:`flex flex-col items-center gap-1 p-2 rounded-xl transition-all ${moodN===m.key?'ring-2 ring-emerald-500 bg-white/10':'bg-surface-3'}`},React.createElement('span',{className:'text-xl'},m.emoji),React.createElement('span',{className:'text-[9px] text-zinc-400'},m.label)))))
+    ),
+    // Close
+    React.createElement('div',{key:'c',className:'space-y-5 anim-in'},
+      React.createElement('div',{className:'text-center'}, React.createElement('span',{className:'text-4xl'},'🌙'), React.createElement('h2',{className:'text-xl font-bold mt-3'},'Cierre')),
+      React.createElement('div',{className:'flex gap-2'},
+        React.createElement('button',{onClick:()=>setBrushN(!brushN),className:`flex-1 flex items-center gap-2 p-3 rounded-xl transition-all ${brushN?'bg-cyan-500/10 border border-cyan-500/30':'bg-surface-3 border border-white/5'}`}, React.createElement('span',null,'🦷'), React.createElement('span',{className:'text-sm'},'Cepillado'), React.createElement('span',{className:'ml-auto'},brushN?'✅':'⬜')),
+        React.createElement('button',{onClick:()=>setFloss(!floss),className:`flex-1 flex items-center gap-2 p-3 rounded-xl transition-all ${floss?'bg-cyan-500/10 border border-cyan-500/30':'bg-surface-3 border border-white/5'}`}, React.createElement('span',null,'🧵'), React.createElement('span',{className:'text-sm'},'Hilo'), React.createElement('span',{className:'ml-auto'},floss?'✅':'⬜'))
+      ),
+      React.createElement('div',null, React.createElement('label',{className:'text-sm text-zinc-400 block mb-2'},'Autocuidado'), React.createElement('div',{className:'flex flex-wrap gap-1.5'},SELF_CARE.map(s=>React.createElement('button',{key:s,onClick:()=>toggleSC(s),className:`text-xs px-3 py-1.5 rounded-full transition-all ${selfCare.includes(s)?'bg-pink-500/15 border border-pink-500/30 text-pink-300':'bg-surface-3 text-zinc-400 border border-white/5'}`},s)))),
+      React.createElement('button',{onClick:()=>setSocial(!social),className:`w-full flex items-center gap-3 p-3 rounded-xl transition-all ${social?'bg-purple-500/10 border border-purple-500/30':'bg-surface-3 border border-white/5'}`}, React.createElement('span',null,'👥'), React.createElement('span',{className:'text-sm flex-1 text-left'},'¿Interacción social?'), React.createElement('span',null,social?'✅':'⬜')),
+      React.createElement('input',{type:'text',value:grat,onChange:e=>setGrat(e.target.value),placeholder:'Algo bueno de hoy (opcional)',className:'w-full px-4 py-2.5 bg-surface-2 border border-white/5 rounded-xl text-sm focus:outline-none focus:border-emerald-500/30'})
+    ),
+  ];
+
+  return React.createElement('div',{className:'max-w-lg mx-auto px-4 pt-6'},
+    React.createElement('div',{className:'flex items-center justify-between mb-4'}, React.createElement('button',{onClick:closeCheckin,className:'text-zinc-500 hover:text-zinc-300 text-sm'},'← Volver'), React.createElement('div',{className:'flex gap-1.5'},[0,1,2,3].map(i=>React.createElement('div',{key:i,className:`h-1 w-6 rounded-full ${i<=step?'bg-indigo-400':'bg-white/10'}`}))), React.createElement('span',{className:'text-xs text-zinc-500'},(step+1)+'/4')),
+    steps[step],
+    React.createElement('div',{className:'flex gap-3 mt-8 pb-6'},
+      step>0&&React.createElement('button',{onClick:()=>setStep(step-1),className:'px-6 py-3 bg-surface-3 rounded-xl text-sm'},'Atrás'),
+      step<3?React.createElement('button',{onClick:()=>setStep(step+1),className:'flex-1 px-6 py-3 bg-indigo-500 hover:bg-indigo-400 text-white font-semibold rounded-xl'},'Siguiente')
+        :React.createElement('button',{onClick:save,className:'flex-1 px-6 py-3 bg-emerald-500 hover:bg-emerald-400 text-black font-semibold rounded-xl'},'Guardar ✓')
+    )
+  );
+}
+
+// ============================================================
+// TIMEBOXING
+// ============================================================
+function TimeboxingView({ todayData, setDay }) {
+  const [showAdd,setShowAdd]=useState(false), [title,setTitle]=useState(''), [cat,setCat]=useState('deep_work'), [start,setStart]=useState('09:00'), [dur,setDur]=useState(60), [pri,setPri]=useState('P2');
+
+  const blocks = [...(todayData.blocks||[])].sort((a,b)=>a.startTime.localeCompare(b.startTime));
+  const workB = blocks.filter(b=>b.category!=='buffer'&&b.category!=='rest');
+  const p1Count = workB.filter(b=>b.priority==='P1').length;
+  const totalMin = blocks.reduce((s,b)=>s+b.durationMinutes,0);
+  const capacity = totalMin/(14*60);
+  const capSt = capacity>0.9?'red':capacity>0.75?'yellow':'green';
+
+  const add = () => {
+    if(!title.trim()) return;
+    if(pri==='P1'&&p1Count>=3){ alert('Máximo 3 P1 por día'); return; }
+    setDay(todayStr(), d=>({...d, blocks:[...(d.blocks||[]),{id:genId(),title,category:cat,startTime:start,durationMinutes:dur,priority:pri,status:'pending'}]}));
+    setTitle(''); setShowAdd(false);
+  };
+
+  const cycle = (id,cur) => {
+    const order=['pending','completed','partial','skipped'];
+    const next=order[(order.indexOf(cur)+1)%order.length];
+    setDay(todayStr(), d=>({...d, blocks:(d.blocks||[]).map(b=>b.id===id?{...b,status:next}:b)}));
+  };
+
+  const del = (id) => setDay(todayStr(), d=>({...d, blocks:(d.blocks||[]).filter(b=>b.id!==id)}));
+
+  const sIcon = s => s==='completed'?'✅':s==='partial'?'🔁':s==='skipped'?'❌':'⬜';
+
+  return React.createElement('div',{className:'max-w-lg mx-auto px-4 pt-6 space-y-4'},
+    React.createElement('div',null, React.createElement('h1',{className:'text-2xl font-bold'},'Timeboxing'), React.createElement('p',{className:'text-sm text-zinc-500'},new Date().toLocaleDateString('es-MX',{weekday:'long',day:'numeric',month:'long'}))),
+    // Capacity
+    React.createElement('div',{className:'glass rounded-xl p-3'},
+      React.createElement('div',{className:'flex justify-between text-xs mb-2'}, React.createElement('span',{className:'text-zinc-400'},'Carga del día'), React.createElement('span',{className:'font-mono',style:{color:statusColor(capSt)}},Math.round(capacity*100)+'%')),
+      React.createElement('div',{className:'h-2 bg-surface-3 rounded-full overflow-hidden'}, React.createElement('div',{className:'h-full rounded-full transition-all',style:{width:Math.min(capacity*100,100)+'%',background:statusColor(capSt)}})),
+      capacity>0.9&&React.createElement('p',{className:'text-xs text-red-400 mt-2'},'⚠️ Tu día está muy lleno.')
+    ),
+    // Stats
+    React.createElement('div',{className:'flex gap-2'},
+      [{l:'Completados',v:workB.filter(b=>b.status==='completed').length+'/'+workB.length,c:'text-emerald-400'},{l:'Deep Work',v:blocks.filter(b=>b.category==='deep_work').length,c:'text-blue-400'},{l:'P1',v:p1Count+'/3',c:'text-orange-400'},{l:'Buffers',v:blocks.filter(b=>b.category==='buffer').length,c:'text-zinc-400'}].map((s,i)=>
+        React.createElement('div',{key:i,className:'flex-1 bg-surface-2 rounded-xl p-2.5 text-center'}, React.createElement('div',{className:'text-lg font-bold '+s.c},s.v), React.createElement('div',{className:'text-[10px] text-zinc-500'},s.l))
+      )
+    ),
+    // Blocks
+    blocks.length===0 && React.createElement('div',{className:'glass rounded-xl p-8 text-center'}, React.createElement('span',{className:'text-4xl block mb-3'},'📅'), React.createElement('p',{className:'text-zinc-400 text-sm'},'No hay bloques aún.')),
+    blocks.map(b => {
+      const bc=BLOCK_CATS[b.category]||BLOCK_CATS.admin;
+      const endM=parseInt(b.startTime.split(':')[0])*60+parseInt(b.startTime.split(':')[1])+b.durationMinutes;
+      const endH=String(Math.floor(endM/60)).padStart(2,'0'), endMn=String(endM%60).padStart(2,'0');
+      return React.createElement('div',{key:b.id,className:`glass rounded-xl p-3 flex items-center gap-3 border-l-4 transition-all ${b.status==='completed'?'opacity-60':''}`,style:{borderLeftColor:bc.color}},
+        React.createElement('button',{onClick:()=>cycle(b.id,b.status),className:'text-xl shrink-0'},sIcon(b.status)),
+        React.createElement('div',{className:'flex-1 min-w-0'},
+          React.createElement('div',{className:'flex items-center gap-2'},
+            React.createElement('span',{className:'text-xs px-1.5 py-0.5 rounded',style:{background:bc.color+'22',color:bc.color}},bc.label),
+            b.priority==='P1'&&React.createElement('span',{className:'text-[10px] px-1.5 py-0.5 bg-red-500/20 text-red-400 rounded font-bold'},'P1'),
+            b.priority==='P2'&&React.createElement('span',{className:'text-[10px] px-1.5 py-0.5 bg-yellow-500/20 text-yellow-400 rounded'},'P2')
+          ),
+          React.createElement('div',{className:'font-medium text-sm mt-1 truncate'},b.title)
+        ),
+        React.createElement('div',{className:'text-right shrink-0'}, React.createElement('div',{className:'text-xs font-mono text-zinc-400'},b.startTime), React.createElement('div',{className:'text-[10px] text-zinc-600'},b.durationMinutes+'m → '+endH+':'+endMn)),
+        React.createElement('button',{onClick:()=>del(b.id),className:'text-zinc-600 hover:text-red-400 text-xs ml-1'},'✕')
+      );
+    }),
+    // Add
+    !showAdd ? React.createElement('button',{onClick:()=>setShowAdd(true),className:'w-full py-3 border-2 border-dashed border-white/10 rounded-xl text-sm text-zinc-400 hover:border-emerald-500/30 hover:text-emerald-400 transition-all'},'+ Agregar bloque')
+    : React.createElement('div',{className:'glass rounded-2xl p-4 space-y-4 border border-emerald-500/20 anim-in'},
+      React.createElement('div',{className:'flex justify-between'}, React.createElement('h3',{className:'font-semibold'},'Nuevo bloque'), React.createElement('button',{onClick:()=>setShowAdd(false),className:'text-zinc-500 text-sm'},'Cancelar')),
+      React.createElement('input',{type:'text',value:title,onChange:e=>setTitle(e.target.value),placeholder:'¿Qué vas a hacer?',className:'w-full px-3 py-2.5 bg-surface-2 border border-white/5 rounded-xl text-sm focus:outline-none focus:border-emerald-500/30',autoFocus:true}),
+      React.createElement('div',null, React.createElement('label',{className:'text-xs text-zinc-500 block mb-1.5'},'Categoría'),
+        React.createElement('div',{className:'flex flex-wrap gap-1.5'}, Object.entries(BLOCK_CATS).map(([k,v])=>React.createElement('button',{key:k,onClick:()=>setCat(k),className:`text-xs px-2.5 py-1.5 rounded-lg transition-all ${cat===k?'border-2':'bg-surface-3 border border-white/5'}`,style:cat===k?{borderColor:v.color,background:v.color+'15',color:v.color}:{}},v.icon+' '+v.label)))
+      ),
+      React.createElement('div',{className:'flex gap-3'},
+        React.createElement('div',{className:'flex-1'}, React.createElement('label',{className:'text-xs text-zinc-500 block mb-1.5'},'Inicio'), React.createElement('input',{type:'time',value:start,onChange:e=>setStart(e.target.value),className:'w-full px-3 py-2 bg-surface-2 border border-white/5 rounded-xl text-sm focus:outline-none'})),
+        React.createElement('div',{className:'flex-1'}, React.createElement('label',{className:'text-xs text-zinc-500 block mb-1.5'},'Duración'), React.createElement('div',{className:'flex flex-wrap gap-1'},[15,25,30,45,60,90,120].map(d=>React.createElement('button',{key:d,onClick:()=>setDur(d),className:`text-xs px-2 py-1 rounded-lg transition-all ${dur===d?'bg-emerald-500 text-black font-bold':'bg-surface-3 text-zinc-400'}`},d+'m'))))
+      ),
+      React.createElement('div',null, React.createElement('label',{className:'text-xs text-zinc-500 block mb-1.5'},'Prioridad'),
+        React.createElement('div',{className:'flex gap-2'}, ['P1','P2','P3'].map(p=>React.createElement('button',{key:p,onClick:()=>setPri(p),className:`flex-1 text-xs py-2 rounded-lg font-bold transition-all ${pri===p?(p==='P1'?'bg-red-500/20 text-red-400 border border-red-500/30':p==='P2'?'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30':'bg-zinc-500/20 text-zinc-400 border border-zinc-500/30'):'bg-surface-3 text-zinc-500 border border-white/5'}`},p)))
+      ),
+      React.createElement('button',{onClick:add,disabled:!title.trim(),className:'w-full py-3 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-30 text-black font-semibold rounded-xl'},'Agregar bloque')
+    ),
+    // Tips
+    blocks.length>0&&!blocks.some(b=>b.category==='buffer')&&React.createElement('div',{className:'bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-3 text-xs text-yellow-300'},'💡 No tienes buffers. Agrega al menos 2 para imprevistos.'),
+    blocks.length>0&&!blocks.some(b=>b.category==='rest')&&React.createElement('div',{className:'bg-orange-500/10 border border-orange-500/20 rounded-xl p-3 text-xs text-orange-300'},'☕ Agrega bloques de descanso.'),
+    React.createElement('div',{className:'h-4'})
+  );
+}
+
+// ============================================================
+// MODULE VIEW
+// ============================================================
+function ModuleView({ activeModule, setAM, scores, weekData, profile }) {
+  if(!activeModule) return React.createElement('div',{className:'max-w-lg mx-auto px-4 pt-6 space-y-4'},
+    React.createElement('h1',{className:'text-2xl font-bold'},'Módulos'),
+    MODULES.map(m => {
+      const s=scores[m.id]||0, st=getStatus(s);
+      return React.createElement('button',{key:m.id,onClick:()=>setAM(m.id),className:'w-full glass rounded-xl p-4 flex items-center gap-4 border border-white/5 hover:border-white/10 transition-all'},
+        React.createElement('span',{className:'text-3xl'},m.icon),
+        React.createElement('div',{className:'flex-1 text-left'}, React.createElement('div',{className:'font-semibold'},m.name), React.createElement('div',{className:'text-xs text-zinc-500'},m.desc)),
+        React.createElement('div',{className:'text-right'}, React.createElement('div',{className:'text-lg font-bold',style:{color:statusColor(st)}},s), React.createElement('div',{className:'text-[10px] text-zinc-500'},'/ 100'))
+      );
+    })
+  );
+
+  const m=MODULES.find(x=>x.id===activeModule);
+  const s=scores[activeModule]||0, st=getStatus(s);
+  const refs={move:'WHO 2020 — 150-300 min/sem moderado, fuerza 2+ días/sem.',nourish:'DGA 2025-2030 — Alimentos reales, proteína, vegetales 3/día, frutas 2/día, agua.',rest:'AASM — Adultos: 7+ horas/noche, horario consistente.',mind:'OMS Salud Mental 2013-2030 — Autocuidado, conexión social, prevención.',smile:'CDC Oral Health — Cepillado 2x/día, hilo dental, dentista anual.',work:'Productividad sostenible — Equilibrio ejecución/descanso, deep work.',time:'Timeboxing — Hora de inicio/fin, máx 3 P1/día, buffers obligatorios.'};
+
+  return React.createElement('div',{className:'max-w-lg mx-auto px-4 pt-6 space-y-5 pb-8'},
+    React.createElement('button',{onClick:()=>setAM(null),className:'text-zinc-500 hover:text-zinc-300 text-sm'},'← Módulos'),
+    React.createElement('div',{className:'flex items-center gap-4'},
+      React.createElement('span',{className:'text-5xl'},m.icon),
+      React.createElement('div',null, React.createElement('h1',{className:'text-2xl font-bold'},m.name), React.createElement('p',{className:'text-sm text-zinc-400'},m.desc)),
+      React.createElement('div',{className:'ml-auto text-center'}, React.createElement('div',{className:'text-3xl font-bold',style:{color:statusColor(st)}},s), React.createElement('div',{className:'text-xs text-zinc-500'},'/ 100'))
+    ),
+    // Week chart
+    React.createElement('div',{className:'glass rounded-xl p-4'},
+      React.createElement('h3',{className:'text-xs text-zinc-500 uppercase tracking-wider mb-3'},'Últimos 7 días'),
+      React.createElement('div',{className:'flex items-end gap-1 h-24'}, weekData.map((d,i) => {
+        const ds = getDayScore(activeModule,d);
+        const h=Math.max((ds/100)*80,4), dst=getStatus(ds);
+        return React.createElement('div',{key:i,className:'flex-1 flex flex-col items-center gap-1'},
+          ds>0&&React.createElement('div',{className:'text-[10px] text-zinc-500 font-mono'},ds),
+          React.createElement('div',{className:'w-full rounded-t-md',style:{height:h,background:statusBg(dst)}}),
+          React.createElement('div',{className:'text-[10px] text-zinc-600'},shortDay(d.date))
+        );
+      }))
+    ),
+    React.createElement('div',{className:'glass rounded-xl p-4'},
+      React.createElement('h3',{className:'text-xs text-zinc-500 uppercase tracking-wider mb-2'},'Basado en'),
+      React.createElement('p',{className:'text-xs text-zinc-400'},refs[activeModule]||'')
+    )
+  );
+}
+
+function getDayScore(mod, d) {
+  switch(mod){
+    case 'rest': return d.mc?Math.round(Math.min(d.mc.sleepHours/7,1)*50+(d.mc.sleepQuality/5)*50):0;
+    case 'move': const m=(d.moves||[]).reduce((s,e)=>s+e.minutes,0)+(d.nc?.exerciseMinutes||0); return Math.min(Math.round(m/30*100),100);
+    case 'nourish': return d.nc?Math.round(((d.nc.nutritionCats?.length||0)/6)*60+Math.min((d.nc.waterGlasses||0)/8,1)*40):0;
+    case 'mind': return d.mc?Math.round((1-(d.mc.stressLevel-1)/4)*50+(d.mc.energyLevel/5)*50):0;
+    case 'smile': let ss=0; if(d.mc?.brushedMorning)ss+=40; if(d.nc?.brushedNight)ss+=30; if(d.nc?.flossed)ss+=30; return ss;
+    case 'work': return d.nc?Math.round((d.nc.productivityRating||0)/5*100):0;
+    case 'time': const wb=(d.blocks||[]).filter(b=>b.category!=='buffer'&&b.category!=='rest'); return wb.length?Math.round(wb.filter(b=>b.status==='completed'||b.status==='partial').length/wb.length*100):0;
+    default: return 0;
+  }
+}
+
+// ============================================================
+// WEEKLY REVIEW
+// ============================================================
+function WeeklyReview({ scores, weekData, profile }) {
+  const gSt = getStatus(scores.global);
+  const daysReg = weekData.filter(d=>d.mc||d.nc).length;
+  const sleepDays = weekData.filter(d=>d.mc);
+  const avgSleep = sleepDays.length?sleepDays.reduce((s,d)=>s+(d.mc.sleepHours||0),0)/sleepDays.length:0;
+  const totalEx = weekData.reduce((s,d)=>s+(d.moves||[]).reduce((ss,e)=>ss+e.minutes,0)+(d.nc?.exerciseMinutes||0),0);
+  const nutDays = weekData.filter(d=>d.nc);
+  const avgWater = nutDays.length?nutDays.reduce((s,d)=>s+(d.nc.waterGlasses||0),0)/nutDays.length:0;
+  const brushDays = weekData.filter(d=>d.mc?.brushedMorning&&d.nc?.brushedNight).length;
+  const sorted = MODULES.map(m=>({...m,score:scores[m.id]||0})).sort((a,b)=>b.score-a.score);
+
+  const MC = ({icon,label,value,good}) => React.createElement('div',{className:`rounded-xl p-3 ${good?'bg-emerald-500/10 border border-emerald-500/15':'bg-surface-2 border border-white/5'}`},
+    React.createElement('div',{className:'flex items-center gap-2'}, React.createElement('span',{className:'text-lg'},icon), React.createElement('span',{className:'text-xs text-zinc-400'},label)),
+    React.createElement('div',{className:`text-lg font-bold mt-1 ${good?'text-emerald-400':'text-zinc-300'}`},value)
+  );
+
+  return React.createElement('div',{className:'max-w-lg mx-auto px-4 pt-6 space-y-5 pb-8'},
+    React.createElement('h1',{className:'text-2xl font-bold'},'Revisión Semanal'),
+    React.createElement('div',{className:'glass rounded-2xl p-6 text-center'},
+      React.createElement('div',{className:'text-sm text-zinc-400 mb-2'},'Score global'),
+      React.createElement('div',{className:'text-6xl font-bold',style:{color:statusColor(gSt)}},scores.global),
+      React.createElement('div',{className:'text-sm text-zinc-500 mt-1'},'/ 100'),
+      React.createElement('div',{className:'mt-3 text-sm text-zinc-400'},scores.global>=70?'🌟 Excelente semana.':scores.global>=40?'💪 Buena base.':'🌱 Cada día cuenta.')
+    ),
+    React.createElement('div',{className:'glass rounded-xl p-4'},
+      React.createElement('h3',{className:'text-xs text-zinc-500 uppercase tracking-wider mb-3'},'Scores por esfera'),
+      MODULES.map(m => { const s=scores[m.id]||0, st=getStatus(s);
+        return React.createElement('div',{key:m.id,className:'flex items-center gap-3 py-1.5'},
+          React.createElement('span',{className:'text-lg'},m.icon), React.createElement('span',{className:'text-sm flex-1'},m.name),
+          React.createElement('div',{className:'w-24 h-2 bg-surface-3 rounded-full overflow-hidden'}, React.createElement('div',{className:'h-full rounded-full',style:{width:s+'%',background:statusColor(st),transition:'width 0.5s'}})),
+          React.createElement('span',{className:'text-sm font-bold w-8 text-right',style:{color:statusColor(st)}},s)
+        );
+      })
+    ),
+    React.createElement('div',{className:'grid grid-cols-2 gap-2'},
+      React.createElement(MC,{icon:'📅',label:'Días registrados',value:daysReg+'/7',good:daysReg>=5}),
+      React.createElement(MC,{icon:'😴',label:'Sueño promedio',value:avgSleep.toFixed(1)+'h',good:avgSleep>=7}),
+      React.createElement(MC,{icon:'🏃',label:'Ejercicio total',value:totalEx+' min',good:totalEx>=(profile.weeklyExerciseGoal||150)}),
+      React.createElement(MC,{icon:'💧',label:'Agua promedio',value:avgWater.toFixed(1)+' vasos',good:avgWater>=(profile.waterGoal||8)}),
+      React.createElement(MC,{icon:'🦷',label:'Cepillado completo',value:brushDays+'/7',good:brushDays>=5})
+    ),
+    React.createElement('div',{className:'glass rounded-xl p-4 text-center'},
+      React.createElement('p',{className:'text-sm text-zinc-400'}, daysReg>=5?'🌟 Gran constancia. La consistencia importa más que la perfección.':daysReg>=3?'💪 Buen inicio. Intenta registrar más días.':'🌱 Cada registro cuenta.')
+    )
+  );
+}
+
+// ============================================================
+// RENDER
+// ============================================================
+ReactDOM.render(React.createElement(App), document.getElementById('root'));
+</script>
+</body>
+</html>
